@@ -1,10 +1,10 @@
-import { Alert, Button, Chip, Link, Paper, Typography } from '@mui/material'
+import { Alert, Button, Chip, Link, Paper, Tooltip, Typography } from '@mui/material'
 import { ExternalLink, FileKey, GitCommitHorizontal, Play, ScrollText, ShieldCheck, Square, Trash2 } from 'lucide-react'
 import { Link as RouterLink } from 'react-router-dom'
 import { OwnerChip } from '@/components/common/OwnerChip'
 import { formatDateTime } from '@/lib/format'
 import { useAuthStore } from '@/stores/authStore'
-import type { McpInstall } from './api'
+import { envLabel, type McpInstall } from './api'
 import { effectiveStatus, installStatusMeta } from './status'
 
 interface Props {
@@ -91,14 +91,14 @@ export function InstallManageCard({ install: i, busy, onStart, onStop, onLogs, o
             Data rahasia:
           </Typography>
           {envKeys.map((k) => (
-            <Chip
-              key={k}
-              size="small"
-              variant="outlined"
-              className="font-mono"
-              color={envMissing.includes(k) ? 'warning' : 'default'}
-              label={`${k}${envMissing.includes(k) ? ' · belum diisi' : ''}`}
-            />
+            <Tooltip key={k} title={i.env_guide?.[k]?.help ?? ''}>
+              <Chip
+                size="small"
+                variant="outlined"
+                color={envMissing.includes(k) ? 'warning' : 'default'}
+                label={`${envLabel(i, k)}${envMissing.includes(k) ? ' · belum diisi' : ''}`}
+              />
+            </Tooltip>
           ))}
         </div>
       )}

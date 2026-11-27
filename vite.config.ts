@@ -22,11 +22,13 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       // Forward backend paths during development so the browser stays same-origin
       // (no CORS, and response headers like X-Skill stay readable).
-      // /api = admin API, /v1 = OpenAI-compatible proxy to 9Router, /images = generated images.
+      // /api = admin API, /v1 = OpenAI-compatible proxy to 9Router, /images and /videos = generated files.
       proxy: {
-        '/api': backend,
+        // ws: the Gemini sign-in screen (noVNC) is a WebSocket under /api
+        '/api': { ...backend, ws: true },
         '/v1': backend,
         '/images': backend,
+        '/videos': backend,
       },
     },
   }

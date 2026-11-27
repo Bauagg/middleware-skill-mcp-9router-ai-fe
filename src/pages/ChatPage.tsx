@@ -13,10 +13,33 @@ import {
   useMediaQuery,
 } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
-import { ArrowRight, Circle, CircleCheck, KeyRound, MessageSquare, Send, Settings2, Square } from 'lucide-react'
+import {
+  ArrowRight,
+  Circle,
+  CircleCheck,
+  FileText,
+  KeyRound,
+  MessageSquare,
+  Paperclip,
+  Send,
+  Settings2,
+  Square,
+  Upload,
+  X,
+} from 'lucide-react'
 import { ChatMessageItem } from '@/features/chat/ChatMessageItem'
 import { ChatSettings } from '@/features/chat/ChatSettings'
 import { sendChat, type ChatTurn } from '@/features/chat/api'
+import {
+  ACCEPT,
+  MAX_FILES,
+  MAX_TOTAL_BYTES,
+  formatSize,
+  readAttachment,
+  rejectReason,
+  toContent,
+  type Attachment,
+} from '@/features/chat/attachments'
 import { RouterSettingsFields } from '@/features/router-settings/RouterSettingsFields'
 import { useChatStore } from '@/stores/chatStore'
 import { isRouterReady, missingRouterFields, useRouterSettings } from '@/stores/routerStore'
@@ -32,6 +55,10 @@ export function ChatPage() {
   const isWide = useMediaQuery(theme.breakpoints.up('lg'))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attachError, setAttachError] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { stream, systemPrompt, conversationId, messages, addMessage, updateMessage } = useChatStore()
@@ -49,17 +76,52 @@ export function ChatPage() {
   // stop a running stream when leaving the page
   useEffect(() => () => abortRef.current?.abort(), [])
 
+  /** Read and attach files (picker, drop or paste), skipping the ones that can't be sent. */
+  const attach = async (files: File[]) => {
+    if (files.length === 0) return
+    const problems: string[] = []
+    const next = [...attachments]
+    for (const f of files) {
+      const reason = rejectReason(f)
+      if (reason) {
+        problems.push(reason)
+        continue
+      }
+      if (next.length >= MAX_FILES) {
+        problems.push(`maksimal ${MAX_FILES} lampiran per pesan`)
+        break
+      }
+      try {
+        const a = await readAttachment(f)
+        if (next.reduce((n, x) => n + x.size, 0) + a.size > MAX_TOTAL_BYTES) {
+          problems.push(`${f.name}: total lampiran lebih dari ${MAX_TOTAL_BYTES >> 20} MB`)
+          continue
+        }
+        next.push(a)
+      } catch {
+        problems.push(`${f.name}: tidak bisa dibaca`)
+      }
+    }
+    setAttachments(next)
+    setAttachError(problems.length ? problems.join('; ') : null)
+  }
+
   const send = async (text: string) => {
     const content = text.trim()
-    if (!content || busy || !ready) return
+    if ((!content && attachments.length === 0) || busy || !ready) return
+    const sent = attachments
     setInput('')
+    setAttachments([])
+    setAttachError(null)
 
     const history: ChatTurn[] = [
       ...(systemPrompt.trim() ? [{ role: 'system' as const, content: systemPrompt.trim() }] : []),
-      ...messages.filter((m) => !m.error && m.content).map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user', content },
+      ...messages
+        .filter((m) => !m.error && (m.content || m.attachments?.length))
+        .map((m) => ({ role: m.role, content: toContent(m.content, m.attachments) })),
+      { role: 'user', content: toContent(content, sent) },
     ]
-    addMessage({ id: crypto.randomUUID(), role: 'user', content })
+    addMessage({ id: crypto.randomUUID(), role: 'user', content, attachments: sent })
     const replyId = crypto.randomUUID()
     addMessage({ id: replyId, role: 'assistant', content: '', pending: true })
 
@@ -104,7 +166,36 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100dvh-88px)] gap-4 md:h-[calc(100dvh-8rem)]">
-      <Paper variant="outlined" className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <Paper
+        variant="outlined"
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+        onDragOver={(e) => {
+          if (!ready || !e.dataTransfer.types.includes('Files')) return
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false)
+        }}
+        onDrop={(e) => {
+          if (!ready) return
+          e.preventDefault()
+          setDragging(false)
+          void attach(Array.from(e.dataTransfer.files))
+        }}
+      >
+        {dragging && (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 border-2 border-dashed"
+            style={{ borderColor: theme.palette.primary.main, background: theme.palette.background.paper + 'e6' }}
+          >
+            <Upload size={32} />
+            <Typography sx={{ fontWeight: 600 }}>Lepas untuk melampirkan</Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Gambar, PDF, Word, Excel, PowerPoint, CSV, teks
+            </Typography>
+          </div>
+        )}
         {!isWide && (
           <div className="flex items-center justify-between border-b px-4 py-2" style={{ borderColor: theme.palette.divider }}>
             <Typography variant="body2" sx={{ color: 'text.secondary' }} noWrap>
@@ -159,6 +250,33 @@ export function ChatPage() {
               Untuk chat, lengkapi dulu 9Router milikmu. Belum diisi: <b>{missing.join(', ')}</b>.
             </Alert>
           )}
+          {attachError && (
+            <Alert severity="warning" sx={{ mb: 1.5 }} onClose={() => setAttachError(null)}>
+              {attachError}
+            </Alert>
+          )}
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((a) => (
+                <AttachmentPreview
+                  key={a.id}
+                  attachment={a}
+                  onRemove={() => setAttachments((list) => list.filter((x) => x.id !== a.id))}
+                />
+              ))}
+            </div>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept={ACCEPT}
+            hidden
+            onChange={(e) => {
+              void attach(Array.from(e.target.files ?? []))
+              e.target.value = ''
+            }}
+          />
           <form
             className="flex items-end gap-2"
             onSubmit={(e) => {
@@ -166,6 +284,18 @@ export function ChatPage() {
               void send(input)
             }}
           >
+            <Tooltip title="Lampirkan gambar atau file (PDF, Word, Excel, PowerPoint, CSV)">
+              <span>
+                <IconButton
+                  onClick={() => fileRef.current?.click()}
+                  disabled={!ready || busy}
+                  aria-label="Lampirkan file"
+                  sx={{ border: 1, borderColor: 'divider', width: 48, height: 48 }}
+                >
+                  <Paperclip size={18} />
+                </IconButton>
+              </span>
+            </Tooltip>
             <TextField
               fullWidth
               multiline
@@ -173,6 +303,13 @@ export function ChatPage() {
               placeholder={ready ? 'Tulis pesan… (Enter kirim, Shift+Enter baris baru)' : 'Lengkapi alamat, key, dan model 9Router dulu'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData.files)
+                if (files.length > 0) {
+                  e.preventDefault()
+                  void attach(files)
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
@@ -193,7 +330,7 @@ export function ChatPage() {
                   <IconButton
                     type="submit"
                     color="primary"
-                    disabled={!input.trim() || !ready}
+                    disabled={(!input.trim() && attachments.length === 0) || !ready}
                     aria-label="Kirim"
                     sx={{
                       width: 48,
@@ -222,6 +359,32 @@ export function ChatPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/** A pending attachment above the input: thumbnail for images, name and size for documents. */
+function AttachmentPreview({ attachment: a, onRemove }: { attachment: Attachment; onRemove: () => void }) {
+  return (
+    <Paper variant="outlined" className="relative flex items-center gap-2 overflow-hidden rounded-xl p-1.5 pr-8">
+      {a.kind === 'image' ? (
+        <img src={a.dataUrl} alt={a.name} className="h-12 w-12 rounded-lg object-cover" />
+      ) : (
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-black/5">
+          <FileText size={22} />
+        </div>
+      )}
+      <div className="min-w-0 max-w-44">
+        <Typography variant="body2" noWrap title={a.name}>
+          {a.name}
+        </Typography>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+          {formatSize(a.size)}
+        </Typography>
+      </div>
+      <IconButton size="small" onClick={onRemove} aria-label={`Hapus ${a.name}`} sx={{ position: 'absolute', top: 2, right: 2 }}>
+        <X size={14} />
+      </IconButton>
+    </Paper>
   )
 }
 

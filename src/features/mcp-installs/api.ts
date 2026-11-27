@@ -46,6 +46,10 @@ export interface McpInstall {
   keywords: string[] | null
   /** names of the secrets it needs (values are never returned) */
   env_keys: string[] | null
+  /** readable name of each secret (e.g. DSN -> "Koneksi database"); port and transport are set by the server and never listed */
+  env_labels?: Record<string, string> | null
+  /** per secret: plain-language name, what it is and how to get it, and a fake example (written from the repo's code) */
+  env_guide?: Record<string, { label: string; help: string; example: string; multiline: boolean }> | null
   env_set: string[] | null
   env_missing: string[] | null
   /** signed link (24h) to the secrets form, when the viewer is allowed to fill it */
@@ -142,6 +146,9 @@ export function useRejectMcpInstall() {
       (await api.post<ApiResponse<McpInstall>>(`/mcp/installs/${id}/reject`, { reason: reason.trim() })).data,
   )
 }
+
+/** Readable name of a secret for the UI, falling back to the variable name. */
+export const envLabel = (i: Pick<McpInstall, 'env_labels'>, key: string) => i.env_labels?.[key] ?? key
 
 /** Clone the repo at its latest commit and inspect it (package.json, pyproject, .env.example, README). */
 export function useAnalyzeRepo() {

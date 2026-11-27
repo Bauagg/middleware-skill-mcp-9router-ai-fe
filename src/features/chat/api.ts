@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { authFetch } from '@/lib/authFetch'
 import { hasRouterAccess, routerHeaders, type RouterSettings } from '@/stores/routerStore'
+import type { ContentPart } from './attachments'
 
 /**
  * Chat goes through the OpenAI-compatible proxy at /v1 (not /api): the login token identifies the
@@ -10,7 +11,8 @@ import { hasRouterAccess, routerHeaders, type RouterSettings } from '@/stores/ro
 
 export interface ChatTurn {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  /** parts when the message has attachments (images, documents) */
+  content: string | ContentPart[]
 }
 
 export interface ChatUsage {

@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { ChatUsage } from '@/features/chat/api'
+import type { Attachment } from '@/features/chat/attachments'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  /** images and documents sent with a user message (kept in memory only, like the conversation) */
+  attachments?: Attachment[]
   skill?: string | null
   mcpTools?: number
   usage?: ChatUsage | null

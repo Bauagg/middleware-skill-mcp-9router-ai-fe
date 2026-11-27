@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import { Alert, Box, Button, Chip, Link, Paper, Typography } from '@mui/material'
+import { Alert, Box, Button, Chip, Link, Paper, Tooltip, Typography } from '@mui/material'
 import { Ban, Check, ExternalLink, GitCommitHorizontal } from 'lucide-react'
 import { OwnerChip } from '@/components/common/OwnerChip'
 import { formatDateTime } from '@/lib/format'
-import type { McpInstall } from './api'
+import { envLabel, type McpInstall } from './api'
 import { installStatusMeta } from './status'
 
 interface Props {
@@ -98,13 +98,9 @@ export function InstallReviewCard({ install: i, busy, onApprove, onReject }: Pro
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {envKeys.map((k) => (
-                <Chip
-                  key={k}
-                  size="small"
-                  variant="outlined"
-                  className="font-mono"
-                  label={`${k} · ${envSet.has(k) ? 'sudah diisi' : 'belum diisi'}`}
-                />
+                <Tooltip key={k} title={i.env_guide?.[k]?.help ?? ''}>
+                  <Chip size="small" variant="outlined" label={`${envLabel(i, k)} · ${envSet.has(k) ? 'sudah diisi' : 'belum diisi'}`} />
+                </Tooltip>
               ))}
             </div>
           )}

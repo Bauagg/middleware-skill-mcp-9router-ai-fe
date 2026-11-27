@@ -37,6 +37,14 @@ export const router = createBrowserRouter([
                 lazy: async () => ({ Component: (await import('@/pages/MemoryNotesPage')).MemoryNotesPage }),
               },
               { path: 'gallery', lazy: async () => ({ Component: (await import('@/pages/ImagesPage')).ImagesPage }) },
+              {
+                path: 'ai-accounts',
+                lazy: async () => ({ Component: (await import('@/pages/AIAccountsPage')).AIAccountsPage }),
+              },
+              {
+                path: 'video-gallery',
+                lazy: async () => ({ Component: (await import('@/pages/VideosPage')).VideosPage }),
+              },
               { path: 'mcp', lazy: async () => ({ Component: (await import('@/pages/McpPage')).McpPage }) },
               {
                 path: 'mcp-installs',

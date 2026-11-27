@@ -4,7 +4,7 @@ import { RefreshCw, ShieldCheck } from 'lucide-react'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { PageHeader } from '@/components/common/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/common/States'
-import { useApproveMcpInstall, useMcpInstalls, type McpInstall } from '@/features/mcp-installs/api'
+import { envLabel, useApproveMcpInstall, useMcpInstalls, type McpInstall } from '@/features/mcp-installs/api'
 import { InstallReviewCard } from '@/features/mcp-installs/InstallReviewCard'
 import { RejectInstallDialog } from '@/features/mcp-installs/RejectInstallDialog'
 
@@ -108,7 +108,7 @@ export function McpApprovalsPage() {
               </span>
               {(approving.env_missing?.length ?? 0) > 0 && (
                 <span>
-                  Data rahasia belum lengkap ({approving.env_missing!.join(', ')}). Container baru berjalan setelah user
+                  Data rahasia belum lengkap ({approving.env_missing!.map((k) => envLabel(approving, k)).join(', ')}). Container baru berjalan setelah user
                   mengisinya lewat link form.
                 </span>
               )}

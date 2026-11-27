@@ -1,9 +1,11 @@
 import {
   Brain,
   ChartColumn,
+  Clapperboard,
   FlaskConical,
   FolderGit2,
   Images,
+  KeyRound,
   LayoutDashboard,
   Layers,
   MessageSquare,
@@ -51,6 +53,13 @@ export const navSections: NavSection[] = [
         icon: Images,
         description: 'Gambar yang dibuat lewat chat dengan tool generate_image.',
       },
+      {
+        label: 'Galeri Video',
+        // not /videos: that path is the backend's video files (proxied in dev)
+        path: '/video-gallery',
+        icon: Clapperboard,
+        description: 'Video yang dibuat lewat chat dengan tool generate_video (lewat akun AI, mis. Veo di Gemini).',
+      },
     ],
   },
   {
@@ -90,6 +99,12 @@ export const navSections: NavSection[] = [
         path: '/mcp-installs',
         icon: FolderGit2,
         description: 'Pasang repo GitHub sebagai MCP, lalu jalankan, hentikan, lihat log, atau hapus.',
+      },
+      {
+        label: 'Akun AI',
+        path: '/ai-accounts',
+        icon: KeyRound,
+        description: 'Hubungkan akun AI-mu (Gemini, ChatGPT, ...): gambar dan video di chat memakai kuota akun itu.',
       },
       {
         label: 'Persetujuan MCP',
