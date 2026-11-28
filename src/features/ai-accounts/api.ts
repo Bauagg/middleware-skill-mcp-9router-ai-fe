@@ -267,6 +267,19 @@ export function vncUrl(path: string) {
   return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${path}`
 }
 
+/** Gemini API (Google AI Studio) through its OpenAI-compatible endpoint. */
+export const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai'
+
+/** Whether an API-key provider points at the Gemini API (to show the AI Studio steps). */
+export function isGeminiAPI(p: Pick<AIProvider, 'base_url'>) {
+  return p.base_url.includes('generativelanguage.googleapis.com')
+}
+
+/** The sign-in browser is not running on the server (service login-browser). */
+export function isLoginBrowserDown(message: string) {
+  return /login-browser|browser login belum/i.test(message)
+}
+
 /** The cooldown end if it is still in the future. */
 export function activeCooldown(until: string | null): Date | null {
   if (!until) return null

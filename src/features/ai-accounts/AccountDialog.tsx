@@ -7,12 +7,18 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
+  InputAdornment,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
+import { ExternalLink, Eye, EyeOff } from 'lucide-react'
 import { getErrorMessage } from '@/lib/axios'
 import {
   hasSessionCookie,
+  isGeminiAPI,
   sessionCookieLabel,
   useCreateAIAccount,
   useUpdateAIAccount,
@@ -28,17 +34,45 @@ interface Props {
   onClose: () => void
 }
 
-/** Add an account by pasting cookies or an API key, or replace them for one that needs to sign in again. */
+/** Where Google AI Studio issues Gemini API keys. */
+const AI_STUDIO_KEY_URL = 'https://aistudio.google.com/apikey'
+
+/** One numbered step of the how-to, readable at phone width. */
+function Step({ n, children }: { n: number; children: React.ReactNode }) {
+  const theme = useTheme()
+  return (
+    <li className="flex gap-3">
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+        style={{ background: theme.palette.primary.main, color: theme.palette.primary.contrastText }}
+      >
+        {n}
+      </span>
+      <Typography variant="body1" component="div" sx={{ pt: '2px', lineHeight: 1.6 }}>
+        {children}
+      </Typography>
+    </li>
+  )
+}
+
+/**
+ * Add an account by pasting an API key or cookies, or replace them for one that needs to sign in again.
+ * Fullscreen on phones; the account name is filled in, so a new user only has to paste the key.
+ */
 export function AccountDialog({ open, provider, account, onClose }: Props) {
+  const theme = useTheme()
+  const phone = useMediaQuery(theme.breakpoints.down('sm'))
   const create = useCreateAIAccount()
   const update = useUpdateAIAccount(true)
   const [name, setName] = useState('')
   const [secret, setSecret] = useState('')
+  const [reveal, setReveal] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setName(account?.name ?? '')
+      setName(account?.name ?? provider?.name ?? '')
       setSecret('')
+      setReveal(false)
       create.reset()
       update.reset()
     }
@@ -49,6 +83,7 @@ export function AccountDialog({ open, provider, account, onClose }: Props) {
   if (!provider) return null
   const d = provider.driver_info
   const apiKey = d.auth === 'api_key'
+  const gemini = apiKey && isGeminiAPI(provider)
   const site = d.cookie_domains?.[0] ?? provider.name
   const cookieMissing = !apiKey && secret !== '' && !hasSessionCookie(d, secret)
 
@@ -65,94 +100,161 @@ export function AccountDialog({ open, provider, account, onClose }: Props) {
     }
   }
 
+  const title = account
+    ? `${apiKey ? 'Ganti API key' : 'Perbarui cookie'}: ${account.name}`
+    : apiKey
+      ? `Hubungkan ${provider.name}`
+      : `Tambah akun ${provider.name}`
+
   return (
-    <Dialog open={open} onClose={pending ? undefined : onClose} maxWidth="md" fullWidth>
-      <DialogTitle>
-        {account
-          ? `${apiKey ? 'Ganti API key' : 'Perbarui cookie'}: ${account.name}`
-          : `Tambah akun ${provider.name}`}
-      </DialogTitle>
-      <DialogContent className="flex flex-col gap-4">
-        {apiKey ? (
-          <Alert severity="info" icon={false}>
-            Tempel API key dari dashboard layanan <b>{provider.name}</b> ({provider.base_url}).
-            {provider.chat_model && (
-              <>
-                {' '}Chat (saat 9Router habis) memakai model <code>{provider.chat_model}</code>.
-              </>
-            )}
-            {provider.image_model && (
-              <>
-                {' '}Gambar memakai model <code>{provider.image_model}</code>.
-              </>
-            )}{' '}
-            Biayanya mengikuti pemakaian API akunmu.
-          </Alert>
-        ) : (
-          <Alert severity="info" icon={false}>
-            <Typography variant="subtitle2" gutterBottom>
-              Cara mengambil cookie
-            </Typography>
-            <ol className="list-decimal space-y-1 pl-5 text-sm">
-              <li>
-                Buka <b>jendela Incognito/Private</b>, login ke <b>{site}</b> dengan akun yang mau dipakai.
-              </li>
-              <li>
-                Tekan <b>F12</b> → tab <b>Network</b> → muat ulang halaman → klik request pertama.
-              </li>
-              <li>
-                Di bagian <b>Request Headers</b>, salin seluruh nilai <code>cookie</code>, lalu tempel di bawah.
-              </li>
-              <li>
-                Tutup jendela Incognito <b>tanpa logout</b>. Logout membuat cookie ini langsung tidak berlaku.
-              </li>
+    <Dialog open={open} onClose={pending ? undefined : onClose} maxWidth="sm" fullWidth fullScreen={phone}>
+      <DialogTitle sx={{ fontWeight: 700, fontSize: 20, pb: 1 }}>{title}</DialogTitle>
+      <DialogContent className="flex flex-col gap-5">
+        {/* how-to: plain steps, normal-size text */}
+        <div className="rounded-xl border p-4" style={{ borderColor: theme.palette.divider }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
+            {apiKey ? 'Cara mendapatkan API key' : 'Cara mengambil cookie'}
+          </Typography>
+          {gemini ? (
+            <ol className="flex flex-col gap-3">
+              <Step n={1}>
+                Buka <b>Google AI Studio</b> dan login dengan akun Google-mu.
+              </Step>
+              <Step n={2}>
+                Klik <b>Create API key</b>, lalu salin key yang muncul.
+              </Step>
+              <Step n={3}>Tempel key-nya di kolom di bawah, lalu tekan <b>Hubungkan</b>.</Step>
             </ol>
-            <Typography variant="caption" component="p" sx={{ mt: 1 }}>
-              Bisa juga ekspor JSON dari ekstensi seperti Cookie-Editor, atau isi file cookies.txt.
-            </Typography>
-          </Alert>
-        )}
+          ) : apiKey ? (
+            <ol className="flex flex-col gap-3">
+              <Step n={1}>
+                Buka dashboard <b>{provider.name}</b> dan buat API key.
+              </Step>
+              <Step n={2}>Tempel key-nya di kolom di bawah, lalu tekan <b>Hubungkan</b>.</Step>
+            </ol>
+          ) : (
+            <ol className="flex flex-col gap-3">
+              <Step n={1}>
+                Buka <b>jendela Incognito/Private</b>, login ke <b>{site}</b> dengan akun yang mau dipakai.
+              </Step>
+              <Step n={2}>
+                Tekan <b>F12</b> → tab <b>Network</b> → muat ulang halaman → klik request pertama.
+              </Step>
+              <Step n={3}>
+                Di <b>Request Headers</b>, salin seluruh nilai <code>cookie</code>, lalu tempel di bawah.
+              </Step>
+              <Step n={4}>
+                Tutup jendela Incognito <b>tanpa logout</b> (logout membuat cookie langsung tidak berlaku).
+              </Step>
+            </ol>
+          )}
+          {gemini && (
+            <Button
+              href={AI_STUDIO_KEY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="outlined"
+              size="large"
+              endIcon={<ExternalLink size={16} />}
+              fullWidth={phone}
+              sx={{ mt: 2 }}
+            >
+              Buka Google AI Studio
+            </Button>
+          )}
+        </div>
 
         <TextField
-          label="Nama akun"
-          placeholder={`mis. ${d.key}-utama`}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          helperText="Hanya untuk membedakan akun di halaman ini."
-          autoFocus={!account}
-        />
-        <TextField
           label={apiKey ? 'API key' : `Cookie ${site}`}
-          placeholder={apiKey ? 'sk-...' : `${sessionCookieLabel(d)}=...; ...`}
-          type={apiKey ? 'password' : 'text'}
+          placeholder={gemini ? 'AIza...' : apiKey ? 'sk-...' : `${sessionCookieLabel(d)}=...; ...`}
+          type={apiKey && !reveal ? 'password' : 'text'}
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           multiline={!apiKey}
           minRows={apiKey ? undefined : 4}
-          maxRows={apiKey ? undefined : 10}
-          autoFocus={!!account}
+          maxRows={apiKey ? undefined : 8}
+          autoFocus
+          fullWidth
           error={cookieMissing}
           helperText={
             cookieMissing
               ? `Cookie ${sessionCookieLabel(d)} tidak ada: salin semua cookie saat sudah login.`
-              : `Disimpan terenkripsi dan tidak pernah ditampilkan lagi. ${apiKey ? 'API key' : 'Cookie'} ini setara akses ke akunmu, jangan dibagikan.`
+              : `Disimpan terenkripsi dan tidak pernah ditampilkan lagi. Jangan bagikan ke orang lain.`
           }
-          slotProps={{ htmlInput: { spellCheck: false, autoComplete: 'off', className: 'font-mono text-xs' } }}
+          slotProps={{
+            inputLabel: { sx: { fontSize: 16 } },
+            formHelperText: { sx: { fontSize: 13, mx: 0.5 } },
+            htmlInput: {
+              spellCheck: false,
+              autoComplete: 'off',
+              autoCapitalize: 'off',
+              style: { fontSize: 16, fontFamily: apiKey ? undefined : 'ui-monospace, monospace' },
+            },
+            input: apiKey
+              ? {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setReveal((v) => !v)}
+                        edge="end"
+                        aria-label={reveal ? 'Sembunyikan API key' : 'Tampilkan API key'}
+                      >
+                        {reveal ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }
+              : undefined,
+          }}
         />
+
+        <TextField
+          label="Nama akun"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          fullWidth
+          helperText="Hanya untuk membedakan akun di halaman ini."
+          slotProps={{
+            inputLabel: { sx: { fontSize: 16 } },
+            formHelperText: { sx: { fontSize: 13, mx: 0.5 } },
+            htmlInput: { style: { fontSize: 16 } },
+          }}
+        />
+
+        {apiKey && (provider.chat_model || provider.image_model) && (
+          <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+            {provider.image_model && (
+              <>
+                Gambar memakai model <code>{provider.image_model}</code>.{' '}
+              </>
+            )}
+            {provider.chat_model && (
+              <>
+                Chat (saat 9Router-mu habis) memakai <code>{provider.chat_model}</code>.{' '}
+              </>
+            )}
+            Biayanya mengikuti kuota/tagihan API akunmu.
+          </Typography>
+        )}
 
         {error && <Alert severity="error">{getErrorMessage(error)}</Alert>}
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose} color="inherit" disabled={pending}>
+      <DialogActions
+        sx={{ px: 3, pb: 3, pt: 1, gap: 1, flexDirection: phone ? 'column-reverse' : 'row', alignItems: 'stretch' }}
+      >
+        <Button onClick={onClose} color="inherit" size="large" disabled={pending} fullWidth={phone}>
           Batal
         </Button>
         <Button
           variant="contained"
+          size="large"
           onClick={submit}
           disabled={!valid || pending}
-          startIcon={pending ? <CircularProgress size={16} color="inherit" /> : undefined}
+          fullWidth={phone}
+          startIcon={pending ? <CircularProgress size={18} color="inherit" /> : undefined}
+          sx={{ minWidth: 160 }}
         >
-          {pending ? 'Mengecek…' : account ? 'Simpan & cek' : 'Tambah & cek'}
+          {pending ? 'Mengecek…' : account ? 'Simpan & cek' : apiKey ? 'Hubungkan' : 'Tambah & cek'}
         </Button>
       </DialogActions>
     </Dialog>

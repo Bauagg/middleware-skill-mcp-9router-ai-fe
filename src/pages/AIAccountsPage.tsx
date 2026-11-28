@@ -39,9 +39,11 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/common/States
 import { AccountDialog } from '@/features/ai-accounts/AccountDialog'
 import {
   activeCooldown,
+  isGeminiAPI,
   useAIAccounts,
   useAIDrivers,
   useAIProviders,
+  useLoginAvailable,
   useCheckAIAccount,
   useDeleteAIAccount,
   useDeleteAIProvider,
@@ -134,6 +136,10 @@ function AccountsTab({
 }) {
   const reorder = useReorder('accounts')
   const remove = useDeleteAIAccount()
+  // the sign-in browser may not run on this server: then its button is hidden
+  const loginAvailable = useLoginAvailable().data !== false
+  // pasting cookies is too technical for regular users: only admins get that fallback
+  const allowCookies = useIsAdmin()
   const [secret, setSecret] = useState<Target | null>(null) // paste cookies / API key
   const [login, setLogin] = useState<Target | null>(null) // sign-in in the server browser
   const [secretOpen, setSecretOpen] = useState(false)
@@ -177,6 +183,8 @@ function AccountsTab({
           <ProviderSection
             key={p.id}
             provider={p}
+            loginAvailable={loginAvailable}
+            allowCookies={allowCookies}
             onLogin={() => openLogin({ provider: p, account: null })}
             onPaste={() => openSecret({ provider: p, account: null })}
           >
@@ -198,6 +206,8 @@ function AccountsTab({
                       first={j === 0}
                       last={j === mine.length - 1}
                       busy={reorder.isPending}
+                      loginAvailable={loginAvailable}
+                      allowCookies={allowCookies}
                       onMove={(dir) => reorder.mutate(swap(mine, j, dir))}
                       onSecret={() => openSecret({ provider: p, account: a })}
                       onLogin={() => openLogin({ provider: p, account: a })}
@@ -233,7 +243,7 @@ function AccountsTab({
         provider={login?.provider ?? null}
         account={login?.account ?? null}
         onClose={() => setLoginOpen(false)}
-        onPasteCookies={() => login && openSecret(login)}
+        onPasteCookies={allowCookies ? () => login && openSecret(login) : undefined}
       />
       <AccountDialog
         open={secretOpen}
@@ -268,47 +278,69 @@ function Capabilities({ driver }: { driver: AIDriver }) {
 
 function ProviderSection({
   provider: p,
+  loginAvailable,
+  allowCookies,
   onLogin,
   onPaste,
   children,
 }: {
   provider: AIProvider
+  loginAvailable: boolean
+  allowCookies: boolean
   onLogin: () => void
   onPaste: () => void
   children: React.ReactNode
 }) {
   const d = p.driver_info
+  const gemini = d.auth === 'api_key' && isGeminiAPI(p)
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Typography variant="h6" sx={{ fontWeight: 600, mr: 1 }}>
-          {p.name}
-        </Typography>
-        <Capabilities driver={d} />
-        <div className="ml-auto flex flex-wrap gap-2">
+    <Paper variant="outlined" component="section" className="flex flex-col gap-4 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-wrap items-center gap-2">
+          <Typography variant="h6" sx={{ fontWeight: 700, mr: 1 }}>
+            {p.name}
+          </Typography>
+          <Capabilities driver={d} />
+        </div>
+        <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row">
           {d.auth === 'browser' ? (
             <>
-              <Button size="small" variant="outlined" startIcon={<KeyRound size={14} />} onClick={onPaste}>
-                Tempel cookie
-              </Button>
-              <Button size="small" variant="contained" startIcon={<LogIn size={14} />} onClick={onLogin}>
-                Login akun {p.name}
-              </Button>
+              {allowCookies && (
+                <Button
+                  variant={loginAvailable ? 'outlined' : 'contained'}
+                  startIcon={<KeyRound size={16} />}
+                  onClick={onPaste}
+                >
+                  Tempel cookie
+                </Button>
+              )}
+              {loginAvailable && (
+                <Button variant="contained" startIcon={<LogIn size={16} />} onClick={onLogin}>
+                  Login akun {p.name}
+                </Button>
+              )}
             </>
           ) : (
-            <Button size="small" variant="contained" startIcon={<Plus size={14} />} onClick={onPaste}>
-              Tambah API key
+            <Button variant="contained" startIcon={<Plus size={16} />} onClick={onPaste}>
+              {gemini ? 'Hubungkan dengan API key' : 'Tambah API key'}
             </Button>
           )}
         </div>
       </div>
-      {d.note && (
-        <Alert severity="warning" sx={{ py: 0 }}>
-          {d.note}
+      {gemini && (
+        <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+          Cara resmi dan paling stabil: cukup tempel API key gratis dari Google AI Studio.
+        </Typography>
+      )}
+      {d.auth === 'browser' && !loginAvailable && !allowCookies && (
+        // nothing a regular user can do here right now: say so plainly instead of offering cookies
+        <Alert severity="info">
+          Login akun {p.name} belum tersedia di server ini. Pakai cara API key bila ada, atau hubungi admin.
         </Alert>
       )}
+      {d.note && <Alert severity="warning">{d.note}</Alert>}
       {children}
-    </section>
+    </Paper>
   )
 }
 
@@ -318,13 +350,27 @@ interface CardProps {
   first: boolean
   last: boolean
   busy: boolean
+  loginAvailable: boolean
+  allowCookies: boolean
   onMove: (dir: -1 | 1) => void
   onSecret: () => void
   onLogin: () => void
   onDelete: () => void
 }
 
-function AccountCard({ account: a, provider: p, first, last, busy, onMove, onSecret, onLogin, onDelete }: CardProps) {
+function AccountCard({
+  account: a,
+  provider: p,
+  first,
+  last,
+  busy,
+  loginAvailable,
+  allowCookies,
+  onMove,
+  onSecret,
+  onLogin,
+  onDelete,
+}: CardProps) {
   const check = useCheckAIAccount()
   const update = useUpdateAIAccount()
   const reset = useResetAICooldown()
@@ -407,7 +453,9 @@ function AccountCard({ account: a, provider: p, first, last, busy, onMove, onSec
       {a.status === 'needs_login' && (
         <Alert severity="warning">
           {browser
-            ? `${p.name} menolak sesi ini. Middleware mencoba memulihkannya sendiri tiap 10 menit; bila tetap begini, akunnya logout (mis. logout di browser atau ganti password): klik Login ulang.`
+            ? `${p.name} menolak sesi ini. Middleware mencoba memulihkannya sendiri tiap 10 menit; bila tetap begini, akunnya logout (mis. logout di browser atau ganti password): ${
+                loginAvailable ? 'klik Login ulang.' : allowCookies ? 'klik Tempel cookie.' : 'hubungi admin.'
+              }`
             : 'API key ditolak: klik Ganti API key.'}
         </Alert>
       )}
@@ -427,7 +475,7 @@ function AccountCard({ account: a, provider: p, first, last, busy, onMove, onSec
         >
           {checking ? 'Mengecek…' : 'Cek sesi'}
         </Button>
-        {browser && (
+        {browser && loginAvailable && (
           <Button
             size="small"
             variant={a.status === 'needs_login' ? 'contained' : 'outlined'}
@@ -437,15 +485,17 @@ function AccountCard({ account: a, provider: p, first, last, busy, onMove, onSec
             Login ulang
           </Button>
         )}
-        <Button
-          size="small"
-          color={browser ? 'inherit' : 'primary'}
-          variant={!browser && a.status === 'needs_login' ? 'contained' : 'text'}
-          startIcon={<KeyRound size={14} />}
-          onClick={onSecret}
-        >
-          {browser ? 'Tempel cookie' : 'Ganti API key'}
-        </Button>
+        {(!browser || allowCookies) && (
+          <Button
+            size="small"
+            color={browser ? 'inherit' : 'primary'}
+            variant={!browser && a.status === 'needs_login' ? 'contained' : 'text'}
+            startIcon={<KeyRound size={14} />}
+            onClick={onSecret}
+          >
+            {browser ? 'Tempel cookie' : 'Ganti API key'}
+          </Button>
+        )}
         <Button size="small" color="error" startIcon={<Trash2 size={14} />} onClick={onDelete} sx={{ ml: 'auto' }}>
           Hapus
         </Button>

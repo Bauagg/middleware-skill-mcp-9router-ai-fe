@@ -11,11 +11,23 @@ import {
   DialogContent,
   DialogTitle,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
-import { CircleCheck } from 'lucide-react'
+import { CircleCheck, KeyRound, MonitorX } from 'lucide-react'
 import { getErrorMessage } from '@/lib/axios'
 import { notify } from '@/lib/notify'
-import { aiKeys, cancelLogin, useLoginState, useStartLogin, vncUrl, type AIAccount, type AIProvider } from './api'
+import { useIsAdmin } from '@/stores/authStore'
+import {
+  aiKeys,
+  cancelLogin,
+  isLoginBrowserDown,
+  useLoginState,
+  useStartLogin,
+  vncUrl,
+  type AIAccount,
+  type AIProvider,
+} from './api'
 
 interface Props {
   open: boolean
@@ -23,8 +35,8 @@ interface Props {
   /** null = new account; otherwise sign this account in again */
   account: AIAccount | null
   onClose: () => void
-  /** fall back to pasting cookies (e.g. the sign-in browser isn't running) */
-  onPasteCookies: () => void
+  /** fall back to pasting cookies (e.g. the sign-in browser isn't running); admins only, undefined hides it */
+  onPasteCookies?: () => void
 }
 
 type Screen = 'connecting' | 'connected' | 'disconnected'
@@ -33,12 +45,22 @@ type Screen = 'connecting' | 'connected' | 'disconnected'
 const CLOSE_AFTER_SAVE_MS = 1500
 
 /**
+ * Size of the sign-in browser's screen. Portrait and phone-sized on purpose: sign-in pages are
+ * responsive, so they show their mobile layout (one column, big email/password fields). Must match
+ * LOGIN_SCREEN_W/H in the backend's docker/login-browser/entrypoint.sh.
+ */
+const LOGIN_SCREEN = { width: 540, height: 960 }
+
+/**
  * Sign-in to the provider in a browser running on the server, shown here over noVNC. The server
  * watches the window: as soon as the sign-in completes it saves the account, closes the window
  * (a throwaway context, like Incognito) and this dialog closes itself. Nothing to click after
  * signing in, and no need to open the provider's own page.
  */
 export function LoginDialog({ open, provider, account, onClose, onPasteCookies }: Props) {
+  const theme = useTheme()
+  const phone = useMediaQuery(theme.breakpoints.down('sm'))
+  const isAdmin = useIsAdmin()
   const qc = useQueryClient()
   const start = useStartLogin()
   const login = start.data
@@ -128,38 +150,86 @@ export function LoginDialog({ open, provider, account, onClose, onPasteCookies }
       <Typography variant="body2">Layar terputus. Tutup lalu mulai login lagi.</Typography>
     ) : null
 
+  const errorMessage = start.isError ? getErrorMessage(start.error) : ''
+  const browserDown = start.isError && isLoginBrowserDown(errorMessage)
+  const pasteInstead = onPasteCookies
+    ? () => {
+        close()
+        onPasteCookies()
+      }
+    : undefined
+
   return (
-    <Dialog open={open} onClose={state === 'saving' ? undefined : close} maxWidth="lg" fullWidth>
-      <DialogTitle>{account ? `Login ulang: ${account.name}` : `Login akun ${provider?.name ?? ''}`}</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={state === 'saving' ? undefined : close}
+      maxWidth="sm"
+      fullWidth
+      fullScreen={phone}
+    >
+      <DialogTitle sx={{ fontWeight: 700, fontSize: 20 }}>
+        {account ? `Login ulang: ${account.name}` : `Login akun ${provider?.name ?? ''}`}
+      </DialogTitle>
       <DialogContent className="flex flex-col gap-3">
-        {start.isError ? (
-          <Alert
-            severity="error"
-            action={
+        {browserDown ? (
+          // the sign-in browser isn't running: explain in plain words and offer the other way
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <MonitorX size={40} color={theme.palette.text.secondary} />
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              Login lewat browser belum tersedia
+            </Typography>
+            <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: 440, lineHeight: 1.6 }}>
+              {pasteInstead
+                ? `Service login-browser belum jalan di server. Sebagai admin kamu bisa menempel cookie, atau menyalakan service-nya.`
+                : `Server belum menyalakan fitur login ${provider?.name ?? ''}. Pakai cara API key bila tersedia, atau hubungi admin.`}
+            </Typography>
+            {pasteInstead && (
               <Button
-                color="inherit"
-                size="small"
-                onClick={() => {
-                  close()
-                  onPasteCookies()
-                }}
+                variant="contained"
+                size="large"
+                startIcon={<KeyRound size={18} />}
+                onClick={pasteInstead}
+                fullWidth={phone}
               >
                 Tempel cookie
               </Button>
+            )}
+            {isAdmin && (
+              <Typography variant="caption" sx={{ color: 'text.secondary', mt: 1 }}>
+                Untuk admin: {errorMessage}
+              </Typography>
+            )}
+          </div>
+        ) : start.isError ? (
+          <Alert
+            severity="error"
+            action={
+              pasteInstead && (
+                <Button color="inherit" size="small" onClick={pasteInstead}>
+                  Tempel cookie
+                </Button>
+              )
             }
           >
-            {getErrorMessage(start.error)}
+            {errorMessage}
           </Alert>
         ) : (
           <>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Login di layar bawah ini. Begitu login berhasil, akun <b>tersimpan otomatis</b> dan jendela ini menutup sendiri
-              — tidak perlu membuka halaman {provider?.name} atau mengklik apa pun. Jendelanya seperti Incognito: setelah
-              tersimpan, browser melupakan sesinya dan hanya middleware yang memakainya.
+            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+              Masukkan email dan password akun {provider?.name} di layar bawah ini. Begitu berhasil, akun{' '}
+              <b>tersimpan otomatis</b> dan jendela ini menutup sendiri.
             </Typography>
             <Box
-              className="relative w-full overflow-hidden rounded"
-              sx={{ aspectRatio: '1280 / 900', bgcolor: 'common.black' }}
+              className="relative overflow-hidden rounded"
+              sx={{
+                aspectRatio: `${LOGIN_SCREEN.width} / ${LOGIN_SCREEN.height}`,
+                bgcolor: 'common.black',
+                // phone: full width; larger screens: as tall as fits, so the login form stays big
+                width: phone ? '100%' : 'auto',
+                height: phone ? 'auto' : 'min(72vh, 960px)',
+                maxWidth: '100%',
+                mx: 'auto',
+              }}
             >
               <div ref={screenRef} className="h-full w-full" />
               {overlay && (
@@ -184,8 +254,8 @@ export function LoginDialog({ open, provider, account, onClose, onPasteCookies }
         )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={close} color="inherit" disabled={state === 'saving'}>
-          {state === 'waiting' ? 'Batal' : 'Tutup'}
+        <Button onClick={close} color="inherit" size="large" disabled={state === 'saving'} fullWidth={phone}>
+          {state === 'waiting' && !start.isError ? 'Batal' : 'Tutup'}
         </Button>
       </DialogActions>
     </Dialog>

@@ -10,8 +10,20 @@ import {
   MenuItem,
   TextField,
 } from '@mui/material'
+import { Sparkles } from 'lucide-react'
 import { getErrorMessage } from '@/lib/axios'
-import { useCreateAIProvider, useUpdateAIProvider, type AIDriver, type AIProvider } from './api'
+import { GEMINI_API_BASE_URL, useCreateAIProvider, useUpdateAIProvider, type AIDriver, type AIProvider } from './api'
+
+/**
+ * Gemini API (Google AI Studio) through its OpenAI-compatible endpoint: users then only paste an
+ * API key. The image model is the one in Google's own example; the chat model is left to the admin
+ * because Gemini model names change often (check aistudio.google.com).
+ */
+const GEMINI_PRESET = {
+  name: 'Gemini API',
+  baseURL: GEMINI_API_BASE_URL,
+  imageModel: 'gemini-2.5-flash-image',
+}
 
 interface Props {
   open: boolean
@@ -92,6 +104,20 @@ export function ProviderDialog({ open, drivers, provider, onClose }: Props) {
           <Alert severity="info" icon={false} sx={{ mt: provider ? 1 : 0 }}>
             {d.description}
           </Alert>
+        )}
+        {!provider && d?.needs_base_url && d.model_fields && (
+          <Button
+            variant="outlined"
+            startIcon={<Sparkles size={16} />}
+            onClick={() => {
+              setName(GEMINI_PRESET.name)
+              setBaseURL(GEMINI_PRESET.baseURL)
+              setModel(GEMINI_PRESET.imageModel)
+            }}
+            sx={{ alignSelf: 'flex-start' }}
+          >
+            Isi otomatis: Gemini API (Google AI Studio)
+          </Button>
         )}
         <TextField
           label="Nama provider"
